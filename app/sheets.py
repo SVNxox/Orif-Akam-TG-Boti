@@ -21,22 +21,25 @@ client_manager = gspread_asyncio.AsyncioGspreadClientManager(get_credentials)
 
 SHEET_NAME = os.getenv("SHEET_NAME")
 
-async def append_number(
-        extracted_number: str,
+async def append_message(
+        extracted_number: int,
+        message_text: str,
+        message_date: str,
+        tg_link: str
 ):
     if not SHEET_NAME:
         raise ValueError(".env faylda SHEET_NAME berilmagan")
-
-    if not extracted_number or not extracted_number.isdigit():
-        return
+    #
+    # if not extracted_number:
+    #     return
 
     client = await client_manager.authorize()
     spreadsheet = await client.open(SHEET_NAME)
     sheet = await spreadsheet.get_worksheet(0)
 
-    existing = await sheet.col_values(1)
+    # existing = await sheet.col_values(1)
+    #
+    # if extracted_number in existing:
+    #     return
 
-    if extracted_number in existing:
-        return
-
-    await sheet.append_row([extracted_number])
+    await sheet.append_row([extracted_number, message_text, message_date, tg_link])
