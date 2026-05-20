@@ -1,10 +1,9 @@
 from datetime import datetime, timezone
 import os
 import gspread_asyncio
-from _testcapi import awaitType
-from google.auth import aws
 from google.oauth2.service_account import Credentials
 from app.config import SHEET_NAME
+from zoneinfo import ZoneInfo
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -23,10 +22,11 @@ client_manager = gspread_asyncio.AsyncioGspreadClientManager(get_credentials)
 async def append_message(
         extracted_number: int,
         message_text: str,
-        message_date: str,
         tg_link: str,
         post_url: str = "",
-        sent_timestamp: str =None
+        sent_timestamp: str = None,
+        message_id: int = None,
+        chat_id: int = None
 ):
     if not SHEET_NAME:
         raise ValueError(".env faylda SHEET_NAME berilmagan")
@@ -44,27 +44,29 @@ async def append_message(
     #     return
 
     if sent_timestamp is None:
-        sent_timestamp = datetime.now(timezone.utc).astimezone().isoformat()
+        sent_timestamp = datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%Y-%m-%d %H:%M:%S")
 
     headers = await sheet.row_values(1)
-    expected_headers = ["ID", "FISH_MFY_SANA", "Sana", "TG_link", "Post_URL", "Sent_Timestamp", "Message_ID", "Chat_ID"]
+    expected_headers = ["ID", "FISH_MFY_SANA", "Yuboruvchi_profili", "Post_URL_manzili", "Yuborilgan_sana_va_vaqt", "Message_ID", "Chat_ID"]
 
     if not headers or headers[0] != "ID":
         await sheet.append_row(expected_headers)
         headers = expected_headers
 
-    await sheet.append_row([
-        extracted_number,
-        message_text,
-        message_date,
-        tg_link,
-        post_url,
-        sent_timestamp,
-        "",
-        ""
-    ])
+    await sheet.append_row(
+        [
+            extracted_number,
+            message_text,
+            tg_link,
+            post_url,
+            sent_timestamp,
+            str(message_id) if message_id else "",
+            str(chat_id) if chat_id else ""
+        ],
+        value_input_option='USER_ENTERED'
+    )
 
-    return await sheet.row_count
+    return sheet.row_count
 
 # Xabar qatorini message_id bo'yicha topish
 async def find_row_by_message_id(message_id: int, chat_id: int):
@@ -102,7 +104,6 @@ async def update_row_by_id(
         row_number: int,
         extracted_number: int = None,
         message_text: str = None,
-        message_date: str = None,
         tg_link: str = None,
         post_url: str = None
 ):
@@ -116,30 +117,43 @@ async def update_row_by_id(
     # Qatorni qiymatini olish
     current = await sheet.row_values(row_number)
 
+    while len(current) < 6:
+        current.append("")
+
     # Faqat berilgan qatorni yangilash
     if extracted_number is not None:
-        current[0] = str(extracted_number)
+        current[0] = int(extracted_number)
     if message_text is not None:
         current[1] = message_text
-    if message_date is not None:
-        current[2] = message_date
     if tg_link is not None:
-        current[3] = tg_link
+        current[2] = tg_link
     if post_url is not None:
-        current[4] = post_url
+        current[3] = post_url
 
-    await sheet.update(f"A{row_number}:F{row_number}", [current[:6]])
+    await sheet.update(f"A{row_number}:F{row_number}", [current[:5]], value_input_option='USER_ENTERED')
 
 # Qatorni message_ig va chat_id bo'yicha o'chirish
+# app/sheets.py - добавьте, если отсутствует
+
 async def delete_row_by_message_id(message_id: int, chat_id: int):
+    """
+    Находит и удаляет строку по message_id + chat_id.
+    Google Sheets автоматически сдвигает строки вверх после удаления.
+    Возвращает True если удалено, False если не найдено.
+    """
+    if not SHEET_NAME:
+        return False
+
+    client = await client_manager.authorize()
+    spreadsheet = await client.open(SHEET_NAME)
+    sheet = await spreadsheet.get_worksheet(0)
+
     row_num = await find_row_by_message_id(message_id, chat_id)
-    if row_num:
-        client = await client_manager.authorize()
-        spreadsheet = await client.open(SHEET_NAME)
-        sheet = await spreadsheet.get_worksheet(0)
-        await sheet.delete_rows(row_num, row_num)
-        return True
-    return False
+    if not row_num:
+        return False
+
+    await sheet.delete_rows(row_num, row_num)
+    return True
 
 # Sinxronizatsiya uchun message_id va chat_id qatorga saqlash
 async def update_message_ids(row_number: int, message_id: int, chat_id: int):
@@ -154,3 +168,37 @@ async def update_message_ids(row_number: int, message_id: int, chat_id: int):
     await sheet.update_cell(row_number, 7, str(message_id))
     await sheet.update_cell(row_number, 8, str(chat_id))
 
+
+async def update_row_by_message_id(
+        message_id: int,
+        chat_id: int,
+        message_text: str = None,
+        extracted_number: int = None,
+):
+    """
+    Находит строку по message_id + chat_id и обновляет указанные поля.
+    Возвращает True если строка найдена и обновлена, False если не найдена.
+    """
+    if not SHEET_NAME:
+        return False
+
+    client = await client_manager.authorize()
+    spreadsheet = await client.open(SHEET_NAME)
+    sheet = await spreadsheet.get_worksheet(0)
+
+    # Находим номер строки
+    row_num = await find_row_by_message_id(message_id, chat_id)
+    if not row_num:
+        return False
+
+    updates = []
+
+    # Колонка A (ID) — индекс 1
+    if extracted_number is not None:
+        await sheet.update_cell(row_num, 1, str(extracted_number))
+
+    # Колонка B (FISH_MFY_SANA) — индекс 2
+    if message_text is not None:
+        await sheet.update_cell(row_num, 2, message_text)
+
+    return True

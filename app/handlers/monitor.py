@@ -33,12 +33,12 @@ async def process_message(message: Message):
         await append_message(
             extracted_number=extracted_num,
             message_text=text,
-            message_date=str(message.date.astimezone(ZoneInfo("Asia/Tashkent"))),
+            message_date=str(message.date.astimezone(ZoneInfo("Asia/Tashkent")).strftime("%Y-%m-%d %H:%M:%S")),
             tg_link=str(message.get_url())
         )
 
 
-# 🔹 Добавляем фильтр на уровне роутера (опционально, для экономии ресурсов)
+# 🔹 Добавляем фильтр на уровне роутера (о   пционально, для экономии ресурсов)
 @router.message(F.chat.id == CHAT_TARGET)
 async def new_message_handler(message: Message):
     await process_message(message)
