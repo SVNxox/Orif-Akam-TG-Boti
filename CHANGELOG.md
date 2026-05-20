@@ -1,6 +1,6 @@
 # Changelog
 
-## [v1.0.0] - 2026-05-20
+## [v2.0.0] - 2026-05-20
 ### ✨ Added
 - Multi-step form with FSM state management
 - Telegram group + Google Sheets auto-sync
