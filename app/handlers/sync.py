@@ -165,49 +165,93 @@ async def sync_deleted_posts(message: Message):
         await message.answer(f"❌ Xato: {e}")
 
 
-# 🔹 /allow <ID> — добавить пользователя
-@router.message(F.text.startswith("/ruxsat "))
+# 🔹 /ruxsat <ID> [Имя] — добавить пользователя с опциональным именем
+@router.message(F.text.startswith("/ruxsat"))
 async def cmd_allow(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return await message.answer("🔒 Faqat admin uchun.")
 
-    try:
-        uid = int(message.text.split()[1])
-        if add_user(uid):
-            await message.answer(f"✅ ID <code>{uid}</code> oq roʻyxatga qoʻshildi.", parse_mode="HTML")
+    # Разделяем строку команды по пробелам, максимум на 3 части:
+    # ['/ruxsat', '12345678', 'Abror MFY']
+    parts = message.text.split(maxsplit=2)
+
+    if len(parts) < 2:
+        return await message.answer("❌ Format: `/ruxsat 123456789 Abror MFY` (ism ixtiyoriy)", parse_mode="Markdown")
+
+    uid_str = parts[1]
+    name_str = parts[2] if len(parts) > 2 else ""
+
+    if not uid_str.isdigit():
+        return await message.answer("❌ ID faqat raqamlardan iborat bo'lishi kerak.")
+
+    uid = int(uid_str)
+
+    # add_user теперь принимает и имя. Если запись обновилась/создалась, вернет True
+    if add_user(uid, name_str):
+        if name_str:
+            await message.answer(f"✅ ID <code>{uid}</code> (<i>{name_str}</i>) oq roʻyxatga qoʻshildi/yangilandi.",
+                                 parse_mode="HTML")
         else:
-            await message.answer(f"ℹ️ ID <code>{uid}</code> allaqachon ro'yhatda bor.", parse_mode="HTML")
-    except (IndexError, ValueError):
-        await message.answer("❌ Format: `/ruxsat 123456789`", parse_mode="HTML")
+            await message.answer(f"✅ ID <code>{uid}</code> oq roʻyxatga qoʻshildi.", parse_mode="HTML")
+    else:
+        await message.answer(
+            f"ℹ️ ID <code>{uid}</code> uchun ma'lumotlar o'zgarmadi (allaqachon xuddi shunday ro'yhatda bor).",
+            parse_mode="HTML")
 
 
-# 🔹 /remove <ID> — убрать пользователя
-@router.message(F.text.startswith("/haydash "))
+# 🔹 /haydash <ID> — убрать пользователя
+@router.message(F.text.startswith("/haydash"))
 async def cmd_remove(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return await message.answer("🔒 Faqat admin uchun.")
 
-    try:
-        uid = int(message.text.split()[1])
-        if remove_user(uid):
-            await message.answer(f"🚫 ID <code>{uid}</code> oq ro'yhatdan o'chirildi.", parse_mode="HTML")
-        else:
-            await message.answer(f"ℹ️ ID <code>{uid}</code> ro'yhatda topilmai.", parse_mode="HTML")
-    except (IndexError, ValueError):
-        await message.answer("❌ Format: `/haydash 123456789`", parse_mode="HTML")
+    parts = message.text.split()
+    if len(parts) < 2:
+        return await message.answer("❌ Format: `/haydash 123456789`", parse_mode="Markdown")
+
+    uid_str = parts[1]
+    if not uid_str.isdigit():
+        return await message.answer("❌ ID faqat raqamlardan iborat bo'lishi kerak.")
+
+    uid = int(uid_str)
+    if remove_user(uid):
+        await message.answer(f"🚫 ID <code>{uid}</code> oq ro'yhatdan o'chirildi.", parse_mode="HTML")
+    else:
+        await message.answer(f"ℹ️ ID <code>{uid}</code> ro'yhatda topilmadi.", parse_mode="HTML")
 
 
-# 🔹 /users — показать текущий список
+# 🔹 /azolar — показать текущий список с юзернеймами и именами
 @router.message(F.text == "/azolar")
 async def cmd_list_users(message: Message):
     if message.from_user.id not in ADMIN_IDS:
         return await message.answer("🔒 Faqat admin uchun.")
 
-    from app.access import _load
-    users = sorted(_load())
+    from app.access import get_all_users
+    users = get_all_users()  # Получаем словарь {uid: name}
 
     if not users:
-        text = "📋 Oq ro'yhat bo'sh."
-    text = f"📋 Ruxsat berilgan foydalanuvchilar ({len(users)}):\n" + "\n".join(f"• <code>{u}</code>" for u in users)
+        return await message.answer("📋 Oq ro'yhat bo'sh.")
 
+    response_lines = []
+
+    for uid, name in users.items():
+        username_part = ""
+        try:
+            # Запрашиваем информацию у Telegram API для получения юзернейма
+            chat = await message.bot.get_chat(uid)
+            if chat.username:
+                username_part = f"(@{chat.username})"
+        except Exception:
+            # Ошибка будет, если бот никогда не «видел» этого пользователя
+            pass
+
+        # Форматируем строку вывода
+        if name:
+            line = f"• <code>{uid}</code>{username_part} - {name}"
+        else:
+            line = f"• <code>{uid}</code>{username_part}"
+
+        response_lines.append(line)
+
+    text = f"📋 Ruxsat berilgan foydalanuvchilar ({len(users)}):\n" + "\n".join(response_lines)
     await message.answer(text, parse_mode="HTML")

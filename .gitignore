@@ -244,3 +244,4 @@ cython_debug/
 credentials.json
 need_data.txt
 /all_codes/
+/allowed_users.json
